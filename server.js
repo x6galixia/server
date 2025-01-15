@@ -92,6 +92,22 @@ app.get('/', (req, res) => {
 const userRoutes = require('./src/routes/userRoute/userRoutes');
 app.use('/api/users', userRoutes);
 
+// 404 Handler for Undefined Routes
+app.use((req, res, next) => {
+    res.status(404).json({
+        error: 'The requested URL was not found on this server.'
+    });
+});
+
+// Global Error Handling Middleware
+app.use((err, req, res, next) => {
+    logger.error(err.stack);  // Log error details
+    res.status(500).json({
+        error: 'Internal Server Error',
+        message: err.message
+    });
+});
+
 // Listen on PORT
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
