@@ -6,9 +6,9 @@
     "auditLog": "C:\\Users\\Kim\\Desktop\\server\\logs\\.e67dbfc6339f4ef6408ec4e4b3b2cda4b46eb255-audit.json",
     "files": [
         {
-            "date": 1736975602434,
+            "date": 1736977591692,
             "name": "C:\\Users\\Kim\\Desktop\\server\\logs\\application-2025-01-16.log",
-            "hash": "76b373972c4e0ba9f2aff3fdd61595a7a6ecdf386c98b2af2fbdf9c2a99ab358"
+            "hash": "f63279a997568f9952833afa37da47ca40f3108e48fdab5bb9e697f76432be03"
         }
     ],
     "hashType": "sha256"

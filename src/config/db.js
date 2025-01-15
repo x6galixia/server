@@ -1,4 +1,5 @@
 const { Pool } = require('pg');
+const { InternalServerError } = require('../../src/utils/errors');
 const fs = require('fs');
 const validateEnvVars = require('../../src/utils/envValidator');
 require('dotenv').config();

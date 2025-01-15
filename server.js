@@ -12,6 +12,18 @@ const DailyRotateFile = require('winston-daily-rotate-file');
 const db = require('./src/config/db');
 const fs = require('fs');
 const validateEnvVars = require('./src/utils/envValidator');
+const {
+    AppError,
+    BadRequestError,
+    UnauthorizedError,
+    ForbiddenError,
+    NotFoundError,
+    ConflictError,
+    UnprocessableEntityError,
+    TooManyRequestsError,
+    InternalServerError,
+    ServiceUnavailableError,
+} = require('./src/utils/errors');
 
 // Load environment variables
 require('dotenv').config();
@@ -29,7 +41,10 @@ if (!fs.existsSync(logDir)) {
 }
 
 const logger = winston.createLogger({
-    format: winston.format.combine(winston.format.timestamp(), winston.format.json()),
+    format: winston.format.combine(
+        winston.format.timestamp(),
+        winston.format.json()
+    ),
     transports: [
         new DailyRotateFile({
             filename: `${logDir}/application-%DATE%.log`,
@@ -45,22 +60,27 @@ const logger = winston.createLogger({
     ],
 });
 
+// Define a stream for morgan to use
 logger.stream = {
-    write: (message) => logger.info(message.trim()),
+    write: function (message) {
+        logger.info(message.trim());
+    },
 };
 
 // Initialize Express app
 const app = express();
 
-// Middleware
+// Middleware to add request ID to logs
 app.use((req, res, next) => {
     req.id = uuidv4(); // Attach a unique request ID
+    logger.info({ message: `Request started`, requestId: req.id, url: req.url });
     next();
 });
 
+// Security and other middleware
 app.use(helmet());
 app.use(cors({
-    origin: process.env.NODE_ENV === 'production' ? ['https://your-trusted-domain.com'] : '*',
+    origin: process.env.NODE_ENV === 'production' ? process.env.ALLOWED_ORIGINS.split(',') : '*',
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization'],
 }));
@@ -72,7 +92,7 @@ app.use(morgan('combined', { stream: logger.stream }));
 // Rate limiting
 const apiLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 200,
+    max: process.env.NODE_ENV === 'production' ? 500 : 200,
     message: 'Too many requests from this IP, please try again later.',
 });
 app.use('/api/', apiLimiter);
@@ -86,19 +106,58 @@ app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 
 // Routes
-app.get('/', (req, res) => {
-    res.render('pages/home');
+app.get('/', (req, res, next) => {
+    try {
+        console.log('Rendering home page...');
+        res.render('pages/home');
+    } catch (err) {
+        console.error('Error rendering home page:', err);
+        next(err);
+    }
 });
+
+app.get('/api/health', (req, res) => {
+    res.status(200).json({ status: 'OK', timestamp: new Date().toISOString() });
+});
+
+if (process.env.NODE_ENV === 'development') {
+    app.get('/api/test-error', (req, res, next) => {
+        const { type } = req.query;
+
+        switch (type) {
+            case '400':
+                throw new BadRequestError('This is a bad request.');
+            case '401':
+                throw new UnauthorizedError('You are not authorized.');
+            case '403':
+                throw new ForbiddenError('You do not have permission.');
+            case '404':
+                throw new NotFoundError('Resource not found.');
+            case '409':
+                throw new ConflictError('Conflict detected.');
+            case '422':
+                throw new UnprocessableEntityError('Unprocessable entity.');
+            case '429':
+                throw new TooManyRequestsError('Too many requests.');
+            case '500':
+                throw new InternalServerError('Internal server error.');
+            case '503':
+                throw new ServiceUnavailableError('Service unavailable.');
+            default:
+                res.status(200).json({ message: 'No error triggered.' });
+        }
+    });
+}
 
 const userRoutes = require('./src/routes/userRoute/userRoutes');
 app.use('/api/users', userRoutes);
 
 // 404 Handler
-app.use((req, res) => {
-    res.status(404).json({ error: 'The requested URL was not found on this server.' });
+app.use((req, res, next) => {
+    next(new NotFoundError('The requested URL was not found on this server.'));
 });
 
-// Global error handler
+// Centralized error handler
 app.use((err, req, res, next) => {
     logger.error({
         message: err.message,
@@ -107,9 +166,11 @@ app.use((err, req, res, next) => {
         userId: req.user?.id,
     });
 
-    res.status(500).json({
-        error: 'Internal Server Error',
-        message: err.message,
+    const statusCode = err.statusCode || 500;
+    const errorMessage = err.message || 'Internal Server Error';
+
+    res.status(statusCode).json({
+        error: errorMessage,
         timestamp: new Date().toISOString(),
         requestId: req.id,
     });
@@ -131,3 +192,19 @@ const shutdown = async () => {
 
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
+
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (err) => {
+    logger.error(`Unhandled Rejection: ${err.message}`);
+    if (process.env.NODE_ENV !== 'production') {
+        process.exit(1);
+    }
+});
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (err) => {
+    logger.error(`Uncaught Exception: ${err.message}`);
+    if (process.env.NODE_ENV !== 'production') {
+        process.exit(1);
+    }
+});
