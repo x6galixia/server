@@ -1,114 +1,133 @@
 const express = require('express');
-const helmet = require('helmet');                   // Secure HTTP headers
-const cors = require('cors');                      // Cross-Origin Resource Sharing
-const rateLimit = require('express-rate-limit');   // Rate limiting
-const bodyParser = require('body-parser');         // Handling JSON, URL-encoded data
-const compression = require('compression');       // Compress response bodies
-const morgan = require('morgan');                  // HTTP request logging
-const winston = require('winston');                // Logging library
-const path = require('path');                      // Path handling
-
-// For database connection
-const db = require('./src/config/db');            // Database configuration
-
-// Initialize express app
-const app = express();
-const PORT = process.env.PORT || 3000;
+const helmet = require('helmet');
+const cors = require('cors');
+const rateLimit = require('express-rate-limit');
+const bodyParser = require('body-parser');
+const compression = require('compression');
+const morgan = require('morgan');
+const winston = require('winston');
+const path = require('path');
+const { v4: uuidv4 } = require('uuid');
+const DailyRotateFile = require('winston-daily-rotate-file');
+const db = require('./src/config/db');
+const fs = require('fs');
+const validateEnvVars = require('./src/utils/envValidator');
 
 // Load environment variables
 require('dotenv').config();
 
+// Validate required environment variables
+validateEnvVars();
+
+// Set default port
+const PORT = process.env.PORT || 3000;
+
 // Logger setup
-const fs = require('fs');
 const logDir = path.join(__dirname, 'logs');
 if (!fs.existsSync(logDir)) {
-    fs.mkdirSync(logDir, { recursive: true });  // Create logs directory if not exists
+    fs.mkdirSync(logDir, { recursive: true });
 }
+
 const logger = winston.createLogger({
+    format: winston.format.combine(winston.format.timestamp(), winston.format.json()),
     transports: [
+        new DailyRotateFile({
+            filename: `${logDir}/application-%DATE%.log`,
+            datePattern: 'YYYY-MM-DD',
+            zippedArchive: true,
+            maxSize: '20m',
+            maxFiles: '14d',
+        }),
         new winston.transports.File({ filename: `${logDir}/error.log`, level: 'error' }),
-        new winston.transports.File({ filename: `${logDir}/combined.log` }),
+        ...(process.env.NODE_ENV === 'development'
+            ? [new winston.transports.Console({ format: winston.format.simple() })]
+            : []),
     ],
-    format: winston.format.combine(
-        winston.format.timestamp(),
-        winston.format.json()
-    )
 });
 
-// Stream for Morgan
 logger.stream = {
-    write: function(message, encoding) {
-        logger.info(message.trim());
-    }
+    write: (message) => logger.info(message.trim()),
 };
 
-// Error handling middleware
-app.use((err, req, res, next) => {
-    if (err) {
-        logger.error(err.stack);                       // Log errors
-        return res.status(500).json({ error: err.message });
-    }
+// Initialize Express app
+const app = express();
+
+// Middleware
+app.use((req, res, next) => {
+    req.id = uuidv4(); // Attach a unique request ID
     next();
 });
 
-// Security & Middleware
-app.use(helmet());                                    // Secure HTTP headers
-app.use(cors());                                      // Enable CORS
-app.use(compression());                              // Enable response compression
-app.use(bodyParser.json());                           // Parse JSON request bodies
-app.use(bodyParser.urlencoded({ extended: true }));   // Parse URL-encoded request bodies
+app.use(helmet());
+app.use(cors({
+    origin: process.env.NODE_ENV === 'production' ? ['https://your-trusted-domain.com'] : '*',
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+}));
+app.use(compression());
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
 app.use(morgan('combined', { stream: logger.stream }));
 
 // Rate limiting
-const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000,  // 15 minutes
-    max: 100                   // Limit each IP to 100 requests
+const apiLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 200,
+    message: 'Too many requests from this IP, please try again later.',
 });
-app.use('/api/', limiter);                            // Apply rate limiting to /api endpoints
+app.use('/api/', apiLimiter);
 
 // Static files
-app.use(express.static('public'));  // Public folder for static assets
-app.use("/uploads", express.static('uploads'));     // Directory for file uploads
-app.use("/node_modules", express.static(path.join(__dirname, "node_modules"))); // Node modules for third-party libraries
+app.use(express.static(path.join(__dirname, 'dist')));
+app.use('/uploads', express.static('uploads'));
 
-// Database Connection
-db.connect().then(() => {
-    console.log('Database connected successfully.');
-}).catch(err => {
-    console.error('Database connection error:', err);
-    process.exit(1);
-});
-
-// View engine setup
-app.set("view engine", "ejs");  // Set EJS as the view engine
-app.set("views", path.join(__dirname, "views"));  // Set views directory
-
-// Example Route for root path
-app.get('/', (req, res) => {
-    res.render('pages/home');  // Assuming 'home.ejs' is your homepage
-});
+// View engine
+app.set('view engine', 'ejs');
+app.set('views', path.join(__dirname, 'views'));
 
 // Routes
+app.get('/', (req, res) => {
+    res.render('pages/home');
+});
+
 const userRoutes = require('./src/routes/userRoute/userRoutes');
 app.use('/api/users', userRoutes);
 
-// 404 Handler for Undefined Routes
-app.use((req, res, next) => {
-    res.status(404).json({
-        error: 'The requested URL was not found on this server.'
-    });
+// 404 Handler
+app.use((req, res) => {
+    res.status(404).json({ error: 'The requested URL was not found on this server.' });
 });
 
-// Global Error Handling Middleware
+// Global error handler
 app.use((err, req, res, next) => {
-    logger.error(err.stack);  // Log error details
+    logger.error({
+        message: err.message,
+        stack: err.stack,
+        requestId: req.id,
+        userId: req.user?.id,
+    });
+
     res.status(500).json({
         error: 'Internal Server Error',
-        message: err.message
+        message: err.message,
+        timestamp: new Date().toISOString(),
+        requestId: req.id,
     });
 });
 
-// Listen on PORT
-app.listen(PORT, () => {
+// Graceful shutdown
+const server = app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
 });
+
+const shutdown = async () => {
+    console.log('Shutting down gracefully...');
+    await db.end();
+    server.close(() => {
+        console.log('Server closed.');
+        process.exit(0);
+    });
+};
+
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
