@@ -12,6 +12,8 @@ const { v4: uuidv4 } = require('uuid'); // Generate unique IDs
 const DailyRotateFile = require('winston-daily-rotate-file'); // Rotate log files daily
 const db = require('./src/config/db'); // Database configuration and connection
 const fs = require('fs'); // File system module for working with files
+const session = require('express-session'); // Session management
+const passport = require('./src/config/passportConfig'); // Passport configuration
 const validateEnvVars = require('./src/utils/envValidator'); // Validate required environment variables
 const {
     AppError,
@@ -115,11 +117,26 @@ app.use('/uploads', express.static('uploads')); // Serve files from the 'uploads
 app.set('view engine', 'ejs'); // Use EJS as the template engine
 app.set('views', path.join(__dirname, 'views')); // Set the directory for views
 
+// Session setup
+app.use(session({
+    secret: process.env.SESSION_SECRET || 'your-secret-key', // Use a strong secret key
+    resave: false, // Don't save the session if it wasn't modified
+    saveUninitialized: false, // Don't create a session until something is stored
+    cookie: { 
+        secure: process.env.NODE_ENV === 'production', // Use secure cookies in production (HTTPS)
+        maxAge: 24 * 60 * 60 * 1000 // Session expires in 24 hours
+    }
+}));
+
+// Initialize Passport and restore authentication state from the session
+app.use(passport.initialize());
+app.use(passport.session());
+
 // Routes
 app.get('/', (req, res, next) => {
     try {
         console.log('Rendering home page...');
-        res.render('pages/home'); // Render the home page
+        res.redirect('/server-room'); // Render the home page
     } catch (err) {
         console.error('Error rendering home page:', err);
         next(err); // Pass the error to the centralized error handler
@@ -163,8 +180,17 @@ if (process.env.NODE_ENV === 'development') {
 }
 
 // User routes
-const userRoutes = require('./src/routes/userRoute/userRoutes');
+const userRoutes = require('./src/routes/userRoutes');
 app.use('/api/users', userRoutes); // Mount user routes under /api/users
+
+const signupRoute = require('./src/routes/signupRoute');
+app.use('/api', signupRoute);
+
+const userLoginRoutes = require('./src/routes/loginRoute');
+app.use('/api/user', userLoginRoutes);
+
+const homeRoute = require('./src/routes/homeRoute');
+app.use('/', homeRoute);
 
 // 404 Handler
 // Handle requests to undefined routes
