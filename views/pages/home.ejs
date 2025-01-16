@@ -4,8 +4,78 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>HOME</title>
+    <style>
+        html, body {
+            height: 100%;
+            margin: 0;
+            overflow: hidden;
+            background-image: radial-gradient(ellipse at top, #080e21 0%, #1b2735 95%);
+        }
+
+        .star {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            background: #fff;
+            box-shadow: 
+                200px 300px #fff, 600px 150px #fff, 1200px 400px #fff, 
+                800px 500px #fff, 900px 300px #fff, 300px 600px #fff, 
+                1500px 700px #fff, 1800px 200px #fff, 500px 1000px #fff,
+                100px 700px #fff, 400px 800px #fff, 1400px 900px #fff;
+        }
+
+        @keyframes meteor {
+            0% {
+                opacity: 1;
+                transform: translate(0, 0);
+            }
+            100% {
+                opacity: 0;
+                transform: translate(-600px, 300px);
+            }
+        }
+
+        .meteor {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 300px;
+            height: 1px;
+            transform: rotate(-45deg);
+            background-image: linear-gradient(to right, #fff, rgba(255, 255, 255, 0));
+            animation: meteor 3s linear infinite;
+        }
+
+        .meteor:before {
+            content: "";
+            position: absolute;
+            width: 4px;
+            height: 5px;
+            border-radius: 50%;
+            margin-top: -2px;
+            background: rgba(255, 255, 255, 0.7);
+            box-shadow: 0 0 15px 3px #fff;
+        }
+
+        /* Position meteors at random spots */
+        .meteor-1 { top: 100px; left: 400px; animation-delay: 0s; }
+        .meteor-2 { top: 200px; left: 800px; animation-delay: 0.5s; }
+        .meteor-3 { top: 300px; left: 1200px; animation-delay: 1s; }
+        .meteor-4 { top: 400px; left: 1600px; animation-delay: 1.5s; }
+        .meteor-5 { top: 500px; left: 200px; animation-delay: 2s; }
+        .meteor-6 { top: 600px; left: 600px; animation-delay: 2.5s; }
+        .meteor-7 { top: 700px; left: 1000px; animation-delay: 3s; }
+    </style>
 </head>
 <body>
-    <h1>HOME</h1>
+    <h1 style="color: white; text-align: center; margin-top: 20px;">HOME</h1>
+    <div class="star"></div>
+    <div class="meteor meteor-1"></div>
+    <div class="meteor meteor-2"></div>
+    <div class="meteor meteor-3"></div>
+    <div class="meteor meteor-4"></div>
+    <div class="meteor meteor-5"></div>
+    <div class="meteor meteor-6"></div>
+    <div class="meteor meteor-7"></div>
 </body>
 </html>
