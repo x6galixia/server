@@ -1,11 +1,13 @@
 const express = require('express');
 const passport = require('passport');
 const { BadRequestError } = require('../../src/utils/errors');
+const { ensureNotAuthenticated } = require('../middlewares/authMiddleware');
+const { body, validationResult } = require('express-validator');
 
 const router = express.Router();
 
 // Render the login page
-router.get("/login-page", (req, res, next) => {
+router.get("/login-page", ensureNotAuthenticated, (req, res, next) => {
     console.log("Viewing Login Page");
 
     try {
